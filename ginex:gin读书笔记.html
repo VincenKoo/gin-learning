@@ -1,0 +1,1128 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Markdown Plus exported HTML</title><link rel="stylesheet" href="https://unpkg.com/markdown-core@1.1.0/dist/index.bundle.css"><link rel="stylesheet" href="https://cdn.jsdelivr.net/mermaid/6.0.0/mermaid.css"></head><body><article class="markdown-body"><h1 id="ginginex读书笔记" data-source-line="1"><a class="anchor" href="#ginginex读书笔记"><span class="octicon octicon-link"></span></a>gin/ginex读书笔记</h1>
+<blockquote data-source-line="2">
+<p>Vincen，2018-09-13</p>
+</blockquote>
+<h2 id="ginex读书笔记" data-source-line="4"><a class="anchor" href="#ginex读书笔记"><span class="octicon octicon-link"></span></a>ginex读书笔记</h2>
+<p data-source-line="6">
+</p><ul class="toc">
+  <li>
+    <a href="#ginex读书笔记">ginex读书笔记</a>
+    <ul>
+      <li>
+        <a href="#初始化">初始化</a>
+      </li>
+      <li>
+        <a href="#运行参数解析">运行参数解析</a>
+      </li>
+      <li>
+        <a href="#默认配置解析">默认配置解析</a>
+      </li>
+      <li>
+        <a href="#环境变量解析">环境变量解析</a>
+      </li>
+      <li>
+        <a href="#配置存储初始化">配置存储初始化</a>
+      </li>
+      <li>
+        <a href="#默认中间件注册">默认中间件注册</a>
+      </li>
+    </ul>
+  </li>
+  <li>
+    <a href="#gin读书笔记">gin读书笔记</a>
+    <ul>
+      <li>
+        <a href="#注册">注册</a>
+      </li>
+      <li>
+        <a href="#入口">入口</a>
+      </li>
+      <li>
+        <a href="#处理">处理</a>
+      </li>
+      <li>
+        <a href="#路由">路由</a>
+      </li>
+    </ul>
+  </li>
+</ul>
+<p></p>
+<h3 id="初始化" data-source-line="8"><a class="anchor" href="#初始化"><span class="octicon octicon-link"></span></a>初始化</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">Init</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// 设置环境变量GODEBUG</span>
+	os.Setenv(<span class="hljs-string">"GODEBUG"</span>, fmt.Sprintf(<span class="hljs-string">"netdns=cgo,%s"</span>, os.Getenv(<span class="hljs-string">"GODEBUG"</span>)))
+        <span class="hljs-comment">// 加载配置</span>
+	loadConf()
+        <span class="hljs-comment">// 初始化日志</span>
+	initLog()
+        <span class="hljs-comment">// 设置运行模式，默认是debug模式</span>
+	gin.SetMode(appConfig.Mode)
+
+	<span class="hljs-comment">// 根据cpu个数的环境变量，设置协程并发</span>
+	<span class="hljs-keyword">if</span> v := os.Getenv(<span class="hljs-string">"MY_CPU_LIMIT"</span>); v != <span class="hljs-string">""</span> {
+		n, err := strconv.Atoi(v)
+		<span class="hljs-keyword">if</span> err == <span class="hljs-literal">nil</span> {
+			runtime.GOMAXPROCS(n)
+		}
+	}
+        <span class="hljs-comment">// 初始化配置存储</span>
+	internal.InitConfigStorer()
+}
+
+<span class="hljs-comment">// 加载配置是有优先级的：flag &gt; conf &gt; env</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">loadConf</span><span class="hljs-params">()</span></span> {
+	<span class="hljs-comment">// 解析输入参数</span>
+	parseFlags()
+        <span class="hljs-comment">// 解析配置</span>
+	parseConf()
+	<span class="hljs-comment">// 解析环境变量</span>
+	parseEnvs()
+
+	fmt.Fprintf(os.Stdout, <span class="hljs-string">"App config: %#v\n"</span>, appConfig)
+}
+
+<span class="hljs-comment">// 初始化日志</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">initLog</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// 访问日志，beego的log</span>
+        <span class="hljs-comment">// dir/app/psm.access.log</span>
+	initAccessLogger()
+        <span class="hljs-comment">// app日志，beego的log</span>
+        <span class="hljs-comment">// applog: dir/app/psm.log</span>
+        <span class="hljs-comment">// console log</span>
+        <span class="hljs-comment">// databus log</span>
+	initAppLogger()
+        <span class="hljs-comment">// Kitc日志，gopkg的logs</span>
+        <span class="hljs-comment">// file log: dir/rpc/psm.call.log</span>
+        <span class="hljs-comment">// databus log</span>
+	initKitcLogger()
+        <span class="hljs-comment">// 启动log</span>
+	logs.InitLogger(appLogger)
+}
+
+<span class="hljs-comment">// 设置模式，默认是Debug模式</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">SetMode</span><span class="hljs-params">(value <span class="hljs-keyword">string</span>)</span></span> {
+	<span class="hljs-keyword">switch</span> value {
+	<span class="hljs-keyword">case</span> DebugMode, <span class="hljs-string">""</span>:
+		ginMode = debugCode
+	<span class="hljs-keyword">case</span> ReleaseMode:
+		ginMode = releaseCode
+	<span class="hljs-keyword">case</span> TestMode:
+		ginMode = testCode
+	<span class="hljs-keyword">default</span>:
+		<span class="hljs-built_in">panic</span>(<span class="hljs-string">"gin mode unknown: "</span> + value)
+	}
+	<span class="hljs-keyword">if</span> value == <span class="hljs-string">""</span> {
+		value = DebugMode
+	}
+	modeName = value
+}
+
+<span class="hljs-comment">// 初始化配置存储</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">InitConfigStorer</span><span class="hljs-params">()</span> <span class="hljs-params">(err error)</span></span> {
+	<span class="hljs-keyword">defer</span> <span class="hljs-function"><span class="hljs-keyword">func</span><span class="hljs-params">()</span></span> {
+		<span class="hljs-keyword">if</span> r := <span class="hljs-built_in">recover</span>(); r != <span class="hljs-literal">nil</span> {
+			err = fmt.Errorf(<span class="hljs-string">"Create config storer of etcd error. %v"</span>, r)
+		}
+	}()
+        <span class="hljs-comment">// etcd配置中心</span>
+	configstorer.InitStorer()
+        <span class="hljs-comment">// 设置get的超时为25ms，实际该函数并没有work，还是使用默认值</span>
+	configstorer.SetGetterTimeout(<span class="hljs-number">25</span> * time.Millisecond)
+
+	err = <span class="hljs-literal">nil</span>
+	<span class="hljs-keyword">return</span>
+}</code></pre><h3 id="运行参数解析" data-source-line="96"><a class="anchor" href="#运行参数解析"><span class="octicon octicon-link"></span></a>运行参数解析</h3>
+<p data-source-line="97">运行参数是在生成的项目的script/bootscript.sh中，启动应用程序时传入的参数</p>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">parseFlags</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// PSM是在申请TCE服务的时候</span>
+	flag.StringVar(&amp;appConfig.PSM, <span class="hljs-string">"psm"</span>, <span class="hljs-string">""</span>, <span class="hljs-string">"psm"</span>)
+        <span class="hljs-comment">// 配置的文件夹，默认是当前目录的/conf/</span>
+	flag.StringVar(&amp;appConfig.ConfDir, <span class="hljs-string">"conf-dir"</span>, <span class="hljs-string">""</span>, <span class="hljs-string">"support config file."</span>)
+        <span class="hljs-comment">// 日志的文件夹，默认有2种可能，当boostrap启动带了runtime目录，那么是runtime目录/log，否则是当前目录的/log/</span>
+	flag.StringVar(&amp;appConfig.LogDir, <span class="hljs-string">"log-dir"</span>, <span class="hljs-string">""</span>, <span class="hljs-string">"log dir."</span>)
+        <span class="hljs-comment">// 服务端口，默认是从boostrap脚本传入</span>
+	flag.IntVar(&amp;appConfig.Port, <span class="hljs-string">"port"</span>, <span class="hljs-number">0</span>, <span class="hljs-string">"service port."</span>)
+	flag.Parse()
+
+	<span class="hljs-keyword">if</span> appConfig.PSM == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 使用环境变量_ENV_PSM</span>
+		appConfig.PSM = os.Getenv(_ENV_PSM)
+	}
+	<span class="hljs-keyword">if</span> appConfig.PSM == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 没有指定PSM，打印错误退出</span>
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"PSM is not specified, use -psm option or %s environment\n"</span>, _ENV_PSM)
+		usage()
+	} <span class="hljs-keyword">else</span> {
+                <span class="hljs-comment">// 设置环境变量GINEX_PSM</span>
+		os.Setenv(internal.GINEX_PSM, appConfig.PSM)
+	}
+	<span class="hljs-keyword">if</span> appConfig.ConfDir == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 使用环境变量_ENV_CONF_DIR</span>
+		appConfig.ConfDir = os.Getenv(_ENV_CONF_DIR)
+	}
+	<span class="hljs-keyword">if</span> appConfig.ConfDir == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 没有指定ConfDir，打印错误退出</span>
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"Conf dir is not specified, use -conf-dir option or %s environment\n"</span>, _ENV_CONF_DIR)
+		usage()
+	}
+	<span class="hljs-keyword">if</span> appConfig.LogDir == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 使用环境变量_ENV_LOG_DIR</span>
+		appConfig.LogDir = os.Getenv(_ENV_LOG_DIR)
+	}
+	<span class="hljs-keyword">if</span> appConfig.LogDir == <span class="hljs-string">""</span> {
+                <span class="hljs-comment">// 没有指定LogDir，打印错误退出</span>
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"Log dir is not specified, use -log-dir option or %s environment\n"</span>, _ENV_LOG_DIR)
+		usage()
+	}
+}</code></pre><h3 id="默认配置解析" data-source-line="143"><a class="anchor" href="#默认配置解析"><span class="octicon octicon-link"></span></a>默认配置解析</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">parseConf</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// viper是一个开源组件，能解析多种格式的配置文件，命令行参数，环境变量，甚至能对接配置中心如etcd等，访问了解更多:https://github.com/spf13/viper</span>
+	v := viper.New()
+	v.SetEnvPrefix(<span class="hljs-string">"GIN"</span>)
+        <span class="hljs-comment">// 把PSM的.改为_，拼接上ConfDir得到yaml文件地址</span>
+	confFile := filepath.Join(ConfDir(), strings.Replace(PSM(), <span class="hljs-string">"."</span>, <span class="hljs-string">"_"</span>, <span class="hljs-number">-1</span>)+<span class="hljs-string">".yaml"</span>)
+	<span class="hljs-comment">// 读取配置文件</span>
+        v.SetConfigFile(confFile)
+	<span class="hljs-keyword">if</span> err := v.ReadInConfig(); err != <span class="hljs-literal">nil</span> {
+		msg := fmt.Sprintf(<span class="hljs-string">"Failed to load app config: %s, %s"</span>, confFile, err)
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+		<span class="hljs-built_in">panic</span>(msg)
+	}
+        <span class="hljs-comment">// 设置模式，开发/正式环境</span>
+	mode := _DEVELOP_MODE
+	<span class="hljs-keyword">if</span> Product() {
+		mode = _PRODUCT_MODE
+	}
+        <span class="hljs-comment">// 得到指定模式的配置vv</span>
+	vv := v.Sub(mode)
+	<span class="hljs-keyword">if</span> vv == <span class="hljs-literal">nil</span> {
+		msg := fmt.Sprintf(<span class="hljs-string">"Failed to parse config sub module: %s"</span>, mode)
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+		<span class="hljs-built_in">panic</span>(msg)
+	} <span class="hljs-keyword">else</span> {
+                <span class="hljs-comment">// 1) 设置默认值</span>
+		setDefault(vv)
+	}
+        <span class="hljs-comment">// 解析YAML配置</span>
+	yamlConfig := &amp;appConfig.YamlConfig
+	<span class="hljs-keyword">if</span> err := vv.Unmarshal(yamlConfig); err != <span class="hljs-literal">nil</span> {
+		msg := fmt.Sprintf(<span class="hljs-string">"Failed to unmarshal app config: %s"</span>, err)
+		fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+		<span class="hljs-built_in">panic</span>(msg)
+	}
+        <span class="hljs-comment">// 2) 解析服务端口</span>
+	parseServicePorts()
+
+}
+
+<span class="hljs-comment">// 1) 设置默认值</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">setDefault</span><span class="hljs-params">(v *viper.Viper)</span></span> {
+	v.SetDefault(_SERVICE_PORT, <span class="hljs-string">"6789"</span>)
+	v.SetDefault(_DEBUG_PORT, <span class="hljs-string">"6790"</span>)
+	v.SetDefault(_ENABLE_PPROF, <span class="hljs-literal">false</span>)
+	v.SetDefault(_LOG_LEVEL, <span class="hljs-string">"debug"</span>)
+	v.SetDefault(_LOG_INTERVAL, <span class="hljs-string">"hour"</span>)
+	v.SetDefault(_ENABLE_METRICS, <span class="hljs-literal">false</span>)
+	v.SetDefault(_CONSOLE_LOG, <span class="hljs-literal">true</span>)
+	v.SetDefault(_DATABUS_LOG, <span class="hljs-literal">false</span>)
+	v.SetDefault(_FILE_LOG, <span class="hljs-literal">true</span>)
+	v.SetDefault(_MODE, <span class="hljs-string">"debug"</span>)
+	v.SetDefault(_SERVICE_VERSION, <span class="hljs-string">"0.1.0"</span>)
+}
+
+<span class="hljs-comment">// 2) 解析服务端口</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">parseServicePorts</span><span class="hljs-params">()</span></span> {
+	<span class="hljs-keyword">var</span> err error
+	servicePortValue := os.Getenv(_ENV_SERVICE_PORT)
+	debugPortValue := os.Getenv(_ENV_DEBUG_PORT)
+	<span class="hljs-keyword">var</span> hostNetWork <span class="hljs-keyword">bool</span>
+        <span class="hljs-comment">// 从环境变量取_ENV_HOST_NETWORK，host模式为true，否则为false</span>
+	<span class="hljs-keyword">if</span> v := os.Getenv(_ENV_HOST_NETWORK); v != <span class="hljs-string">""</span> {
+		<span class="hljs-keyword">if</span> hostNetWork, err = strconv.ParseBool(v); err != <span class="hljs-literal">nil</span> {
+			msg := fmt.Sprintf(<span class="hljs-string">"Failed to convert environment variable: %s, %s"</span>, _ENV_HOST_NETWORK, err)
+			fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+			<span class="hljs-built_in">panic</span>(msg)
+		}
+	}
+
+	<span class="hljs-keyword">if</span> hostNetWork {
+		<span class="hljs-comment">// host模式: 只能使用环境变量端口, 否则直接报错</span>
+		<span class="hljs-keyword">if</span> port, err := strconv.Atoi(servicePortValue); err != <span class="hljs-literal">nil</span> {
+			msg := fmt.Sprintf(<span class="hljs-string">"Failed to convert environment variable: %s, %s"</span>, _ENV_SERVICE_PORT, err)
+			fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+			<span class="hljs-built_in">panic</span>(msg)
+		} <span class="hljs-keyword">else</span> {
+			appConfig.ServicePort = port
+		}
+
+		<span class="hljs-keyword">if</span> debugPortValue == <span class="hljs-string">""</span> {
+			appConfig.DebugPort = <span class="hljs-number">0</span>
+		} <span class="hljs-keyword">else</span> {
+			<span class="hljs-keyword">if</span> port, err := strconv.Atoi(debugPortValue); err != <span class="hljs-literal">nil</span> {
+				msg := fmt.Sprintf(<span class="hljs-string">"Failed to convert environment variable: %s, %s"</span>, _ENV_DEBUG_PORT, err)
+				fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+				<span class="hljs-built_in">panic</span>(msg)
+			} <span class="hljs-keyword">else</span> {
+				appConfig.DebugPort = port
+			}
+		}
+	} <span class="hljs-keyword">else</span> {
+		<span class="hljs-comment">// 非host模式: 如果环境变量指定的端口,使用环境变量的.否则使用配置文件的端口</span>
+		<span class="hljs-keyword">if</span> servicePortValue != <span class="hljs-string">""</span> {
+			<span class="hljs-keyword">if</span> port, err := strconv.Atoi(servicePortValue); err != <span class="hljs-literal">nil</span> {
+				msg := fmt.Sprintf(<span class="hljs-string">"Failed to convert environment variable: %s, %s"</span>, _ENV_SERVICE_PORT, err)
+				fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+				<span class="hljs-built_in">panic</span>(msg)
+			} <span class="hljs-keyword">else</span> {
+				appConfig.ServicePort = port
+			}
+		}
+		<span class="hljs-keyword">if</span> debugPortValue != <span class="hljs-string">""</span> {
+			<span class="hljs-keyword">if</span> port, err := strconv.Atoi(debugPortValue); err != <span class="hljs-literal">nil</span> {
+				msg := fmt.Sprintf(<span class="hljs-string">"Failed to convert environment variable: %s, %s"</span>, _ENV_DEBUG_PORT, err)
+				fmt.Fprintf(os.Stderr, <span class="hljs-string">"%s\n"</span>, msg)
+				<span class="hljs-built_in">panic</span>(msg)
+			} <span class="hljs-keyword">else</span> {
+				appConfig.DebugPort = port
+			}
+		}
+	}
+
+	<span class="hljs-comment">// flag指定的port优先级最高</span>
+	<span class="hljs-keyword">if</span> appConfig.Port != <span class="hljs-number">0</span> {
+		appConfig.ServicePort = appConfig.Port
+	}
+}</code></pre><h3 id="环境变量解析" data-source-line="265"><a class="anchor" href="#环境变量解析"><span class="octicon octicon-link"></span></a>环境变量解析</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">parseEnvs</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// serviceCluster，取环境变量SERVICE_CLUSTER，如果取不到，则取值default</span>
+	serviceCluster = os.Getenv(<span class="hljs-string">"SERVICE_CLUSTER"</span>)
+	<span class="hljs-keyword">if</span> serviceCluster == <span class="hljs-string">""</span> {
+		serviceCluster = <span class="hljs-string">"default"</span>
+	}
+}</code></pre><h3 id="配置存储初始化" data-source-line="276"><a class="anchor" href="#配置存储初始化"><span class="octicon octicon-link"></span></a>配置存储初始化</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">NewSingleAsyncCache</span><span class="hljs-params">(f Getter)</span> *<span class="hljs-title">SingleAsyncCache</span></span> {
+	cache := &amp;SingleAsyncCache{
+                <span class="hljs-comment">// 注册getter回调</span>
+		f:          f,
+		data:       <span class="hljs-built_in">make</span>(<span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>]*item),
+		expiration: DefaultExpiration,
+	}
+        <span class="hljs-comment">// 异步刷新配置</span>
+	<span class="hljs-keyword">go</span> cache.asyncRefresh()
+	<span class="hljs-keyword">return</span> cache
+}
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(c *SingleAsyncCache)</span> <span class="hljs-title">asyncRefresh</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// 随机3~5秒间隔刷新，避免拥塞</span>
+	interval := <span class="hljs-number">3000</span> + rand.Intn(<span class="hljs-number">2000</span>)
+	ticker := time.NewTicker(time.Duration(interval) * time.Millisecond)
+	<span class="hljs-keyword">for</span> <span class="hljs-keyword">range</span> ticker.C {
+		c.refresh()
+	}
+}
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(c *SingleAsyncCache)</span> <span class="hljs-title">refresh</span><span class="hljs-params">()</span></span> {
+        <span class="hljs-comment">// 申请50个kv槽位</span>
+	keys := <span class="hljs-built_in">make</span>([]<span class="hljs-keyword">string</span>, <span class="hljs-number">0</span>, <span class="hljs-number">50</span>)
+	c.rlock.RLock()
+        <span class="hljs-comment">// 拷贝数据</span>
+	<span class="hljs-keyword">for</span> key := <span class="hljs-keyword">range</span> c.data {
+		keys = <span class="hljs-built_in">append</span>(keys, key)
+	}
+	c.rlock.RUnlock()
+
+	<span class="hljs-keyword">for</span> i := <span class="hljs-keyword">range</span> keys {
+		key := keys[i]
+		c.rlock.RLock()
+		item := c.data[key]
+		c.rlock.RUnlock()
+
+		<span class="hljs-comment">// if !item.beingUsed(c.expiration) || !item.expired(c.expiration) {</span>
+		<span class="hljs-comment">// 	continue</span>
+		<span class="hljs-comment">// }</span>
+                <span class="hljs-comment">// 乐观锁，避免其他goroutine更新</span>
+		<span class="hljs-keyword">if</span> !item.setPendingIfNot() {
+			<span class="hljs-keyword">continue</span>
+		}
+                <span class="hljs-comment">// 回调getter</span>
+		data, err := c.f(key)
+		<span class="hljs-keyword">if</span> err == <span class="hljs-literal">nil</span> {
+			item.setData(data)
+			item.updateUtime()
+		} <span class="hljs-keyword">else</span> {
+			logs.Noticef(<span class="hljs-string">"SingleAsyncCache.asyncKeys Get %s error: %s"</span>, key, err)
+		}
+                <span class="hljs-comment">// 解开乐观锁</span>
+		item.rmPendingFlag()
+	}
+}
+
+<span class="hljs-comment">// getter回调，获取etcd上指定key的节点数据</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">configGetter</span><span class="hljs-params">(key <span class="hljs-keyword">string</span>)</span> <span class="hljs-params">(<span class="hljs-keyword">interface</span>{}, error)</span></span> {
+        <span class="hljs-comment">// 获取默认的etcd的client</span>
+	cli, err := etcdutil.GetDefaultClient()
+	<span class="hljs-keyword">if</span> err != <span class="hljs-literal">nil</span> {
+		<span class="hljs-keyword">return</span> <span class="hljs-string">""</span>, err
+	}
+        <span class="hljs-comment">// 获取指定的key对应的节点数据</span>
+        <span class="hljs-comment">// context.Background()返回一个背景Context，空白的（不是nil），不会被取消，不会超时</span>
+	node, err := cli.Get(context.Background(), key, <span class="hljs-literal">nil</span>)
+
+	<span class="hljs-keyword">if</span> err != <span class="hljs-literal">nil</span> {
+                <span class="hljs-comment">// key不存在</span>
+		<span class="hljs-keyword">if</span> isEtcdKeyNonexist(err) {
+			<span class="hljs-keyword">return</span> keyNotFound, <span class="hljs-literal">nil</span>
+		}
+                <span class="hljs-comment">// 出错</span>
+		<span class="hljs-keyword">return</span> <span class="hljs-string">""</span>, err
+	}
+        <span class="hljs-comment">// 返回节点数据</span>
+	<span class="hljs-keyword">return</span> node.Node.Value, <span class="hljs-literal">nil</span>
+}</code></pre><h3 id="默认中间件注册" data-source-line="359"><a class="anchor" href="#默认中间件注册"><span class="octicon octicon-link"></span></a>默认中间件注册</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">Default</span><span class="hljs-params">()</span> *<span class="hljs-title">Engine</span></span> {
+	r := New()
+        <span class="hljs-comment">// 异常恢复，打日志，还有返回500的http错误</span>
+	r.Use(gin.RecoveryWithWriter(&amp;recoverWriter{}))
+        <span class="hljs-comment">// 设置/初始化Context</span>
+	r.Use(ctx.Ctx())
+        <span class="hljs-comment">// 记录access log</span>
+	r.Use(accesslog.AccessLog(accessLogger))
+        <span class="hljs-comment">// 打点上报，包含成功时延（us），成功请求数，出错时延（us），错误请求数，ginex框架请求数</span>
+        <span class="hljs-comment">// 打点的tag包含：</span>
+        <span class="hljs-comment">// "status": 状态码</span>
+        <span class="hljs-comment">// "handle_method": 处理的handler名称</span>
+        <span class="hljs-comment">// "from_cluster":  请求集群名称，默认default</span>
+        <span class="hljs-comment">// "to_cluster":    负载集群名称</span>
+        <span class="hljs-comment">// "stress_tag":    压力标签</span>
+	r.Use(apimetrics.Metrics(PSM()))
+        <span class="hljs-comment">// 熔断机制，有2层，第1层：全局开关如果关闭（off），开启熔断；第2层：单独某个业务被关闭，开启熔断</span>
+	r.Use(stress.StressSwitcher(PSM(), LocalCluster()))
+        <span class="hljs-comment">// 限速，通过令牌桶算法</span>
+	r.Use(throttle.Throttle())
+        <span class="hljs-comment">// Whale反爬取接入，实际上此处实现只是打点，因为新版本已经去掉这个支持了</span>
+	<span class="hljs-keyword">if</span> EnableWhaleAnticrawl() {
+		logs.Warnf(<span class="hljs-string">"[Whale] The newest version Ginex removes supports for Whale. Please refer to https://wiki.bytedance.net/pages/viewpage.action?pageId=115955939 for better solutions."</span>)
+		r.Use(whale.WhaleDeprecatedMiddleware())
+	}
+	<span class="hljs-keyword">return</span> r
+}
+
+<span class="hljs-comment">// 初始化上下文</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">Ctx</span><span class="hljs-params">()</span> <span class="hljs-title">gin</span>.<span class="hljs-title">HandlerFunc</span></span> {
+	psm := os.Getenv(internal.GINEX_PSM)
+	cluster := internal_util.LocalCluster()
+	<span class="hljs-keyword">return</span> <span class="hljs-function"><span class="hljs-keyword">func</span><span class="hljs-params">(c *gin.Context)</span></span> {
+                <span class="hljs-comment">// 获取一个logid，用于追踪日志</span>
+		<span class="hljs-keyword">if</span> logID := c.Request.Header.Get(internal.TT_LOGID_HEADER_KEY); logID != <span class="hljs-string">""</span> {
+                        <span class="hljs-comment">// 获得请求方的logid，为了追踪连贯性，服务方继承下来</span>
+			c.Set(internal.LOGIDKEY, logID)
+		} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> logID = c.Request.Header.Get(internal.TT_LOGID_HEADER_FALLBACK_KEY); logID != <span class="hljs-string">""</span> {
+                        <span class="hljs-comment">// 获得请求方的备选logid，为了追踪连贯性，服务方继承下来</span>
+			c.Set(internal.LOGIDKEY, logID)
+		} <span class="hljs-keyword">else</span> {
+                        <span class="hljs-comment">// 请求方没有携带logid，服务方自己生成一个</span>
+                        <span class="hljs-comment">// 生成规则：时间戳（20060102150405）+ 本地ip + 随机数的前5位</span>
+			logID = genLogId()
+			c.Set(internal.LOGIDKEY, logID)
+			c.Header(internal.TT_LOGID_HEADER_KEY, logID)
+		}
+                <span class="hljs-comment">// 请求所指定的环境</span>
+		<span class="hljs-keyword">if</span> env := c.Request.Header.Get(internal.TT_ENV_KEY); env != <span class="hljs-string">""</span> {
+			c.Set(internal.ENVKEY, env)
+		} <span class="hljs-keyword">else</span> {
+			c.Set(internal.ENVKEY, <span class="hljs-string">"prod"</span>)
+		}
+                <span class="hljs-comment">// 压力标签</span>
+		<span class="hljs-keyword">if</span> stressTag := c.Request.Header.Get(internal.TT_STRESS_KEY); stressTag != <span class="hljs-string">""</span> {
+			c.Set(internal.STRESSKEY, stressTag)
+		}
+                <span class="hljs-comment">// psm</span>
+		c.Set(internal.SNAMEKEY, psm)
+                <span class="hljs-comment">// 本地ip</span>
+		c.Set(internal.LOCALIPKEY, localIP)
+                <span class="hljs-comment">// 负载集群</span>
+		c.Set(internal.CLUSTERKEY, cluster)
+                <span class="hljs-comment">// 获取Handler的名称，比如faceu.Login，最后取的是login作为method名</span>
+		method := internal.GetHandlerName(c.Handler())
+		<span class="hljs-keyword">if</span> method == <span class="hljs-string">""</span> {
+			method = c.HandlerName()
+			pos := strings.LastIndexByte(method, <span class="hljs-string">'.'</span>)
+			<span class="hljs-keyword">if</span> pos != <span class="hljs-number">-1</span> {
+				method = c.HandlerName()[pos+<span class="hljs-number">1</span>:]
+			}
+		}
+		c.Set(internal.METHODKEY, method)
+	}
+}
+
+<span class="hljs-comment">// 熔断，有2层，第1层：全局开关如果关闭（off），开启熔断；第2层：单独某个业务被关闭，开启熔断</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">StressSwitcher</span><span class="hljs-params">(psm <span class="hljs-keyword">string</span>, cluster <span class="hljs-keyword">string</span>)</span> <span class="hljs-title">gin</span>.<span class="hljs-title">HandlerFunc</span></span> {
+	psmKey := fmt.Sprintf(<span class="hljs-string">"/kite/stressbot/%s/%s/request/switch"</span>, psm, cluster)
+	globalKey := <span class="hljs-string">"/kite/stressbot/request/switch/global"</span>
+	configstorer.Get(globalKey)
+	configstorer.Get(psmKey)
+
+	<span class="hljs-keyword">return</span> <span class="hljs-function"><span class="hljs-keyword">func</span><span class="hljs-params">(ctx *gin.Context)</span></span> {
+		stressTag := ctx.Request.Header.Get(internal.TT_STRESS_KEY)
+                <span class="hljs-comment">// 开关</span>
+		toReject := <span class="hljs-literal">false</span>
+		reason := <span class="hljs-string">""</span>
+
+		<span class="hljs-keyword">defer</span> <span class="hljs-function"><span class="hljs-keyword">func</span><span class="hljs-params">()</span></span> {
+			<span class="hljs-keyword">if</span> r := <span class="hljs-built_in">recover</span>(); r != <span class="hljs-literal">nil</span> {
+				logs.Errorf(<span class="hljs-string">"Stress middleware panic: %v"</span>, r)
+				ctx.Next()
+			} <span class="hljs-keyword">else</span> {
+				<span class="hljs-keyword">if</span> toReject {
+                                        <span class="hljs-comment">// 打开熔断，返回403，请求终止</span>
+					ctx.String(<span class="hljs-number">403</span>, fmt.Sprintf(<span class="hljs-string">"reject stress bot request: %s"</span>, reason))
+					ctx.Abort()
+				} <span class="hljs-keyword">else</span> {
+                                        <span class="hljs-comment">// 没有触发熔断，继续处理请求</span>
+					ctx.Next()
+				}
+			}
+		}()
+
+		<span class="hljs-keyword">if</span> stressTag != <span class="hljs-string">""</span> { <span class="hljs-comment">// 假设请求者携带熔断标签</span>
+                        <span class="hljs-comment">// 默认开启熔断</span>
+			toReject = <span class="hljs-literal">true</span>
+                        <span class="hljs-comment">// 获取全局开关，默认关闭，大杀器</span>
+			globalSwitch, gerr := configstorer.GetOrDefault(globalKey, <span class="hljs-string">"off"</span>)
+			<span class="hljs-keyword">if</span> gerr != <span class="hljs-literal">nil</span> {
+                                <span class="hljs-comment">// 如果出错了，开启熔断</span>
+                                <span class="hljs-comment">// 细思极恐，如果etcd集群出现问题，这会大面积瘫痪？</span>
+				toReject = <span class="hljs-literal">true</span>
+				reason = <span class="hljs-string">"get config error"</span>
+				<span class="hljs-keyword">return</span>
+			} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> globalSwitch == <span class="hljs-string">"off"</span> {
+                                <span class="hljs-comment">// 全局关闭，开启熔断</span>
+				reason = <span class="hljs-string">"global switch off"</span>
+				toReject = <span class="hljs-literal">true</span>
+				<span class="hljs-keyword">return</span>
+			} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> globalSwitch != <span class="hljs-string">"on"</span> {
+                                <span class="hljs-comment">// 取值非法，开启熔断，WTF？走钢丝？</span>
+				toReject = <span class="hljs-literal">true</span>
+				reason = <span class="hljs-string">"error switch value"</span>
+			}
+                        <span class="hljs-comment">// 通过psm获取所属业务开关，默认关闭</span>
+			psmClusterSwitch, perr := configstorer.GetOrDefault(psmKey, <span class="hljs-string">"off"</span>)
+			<span class="hljs-keyword">if</span> perr != <span class="hljs-literal">nil</span> {
+                                <span class="hljs-comment">// 如果出错了，开启熔断</span>
+				reason = <span class="hljs-string">"get config error"</span>
+				toReject = <span class="hljs-literal">true</span>
+				<span class="hljs-keyword">return</span>
+			} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> psmClusterSwitch == <span class="hljs-string">"off"</span> {
+                                <span class="hljs-comment">// 所属业务关闭，开启熔断</span>
+				reason = fmt.Sprintf(<span class="hljs-string">"psm:cluster %s:%s switch off"</span>, psm, cluster)
+				toReject = <span class="hljs-literal">true</span>
+				<span class="hljs-keyword">return</span>
+			} <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> psmClusterSwitch == <span class="hljs-string">"on"</span> {
+                                <span class="hljs-comment">// 所属业务关闭，不熔断</span>
+				toReject = <span class="hljs-literal">false</span>
+			} <span class="hljs-keyword">else</span> {
+                                <span class="hljs-comment">// 取值非法，开启熔断</span>
+				toReject = <span class="hljs-literal">true</span>
+				reason = <span class="hljs-string">"error switch value"</span>
+			}
+		}
+	}
+}</code></pre><hr>
+<h2 id="gin读书笔记" data-source-line="514"><a class="anchor" href="#gin读书笔记"><span class="octicon octicon-link"></span></a>gin读书笔记</h2>
+<p data-source-line="516">
+</p><ul class="toc">
+  <li>
+    <a href="#ginex读书笔记">ginex读书笔记</a>
+    <ul>
+      <li>
+        <a href="#初始化">初始化</a>
+      </li>
+      <li>
+        <a href="#运行参数解析">运行参数解析</a>
+      </li>
+      <li>
+        <a href="#默认配置解析">默认配置解析</a>
+      </li>
+      <li>
+        <a href="#环境变量解析">环境变量解析</a>
+      </li>
+      <li>
+        <a href="#配置存储初始化">配置存储初始化</a>
+      </li>
+      <li>
+        <a href="#默认中间件注册">默认中间件注册</a>
+      </li>
+    </ul>
+  </li>
+  <li>
+    <a href="#gin读书笔记">gin读书笔记</a>
+    <ul>
+      <li>
+        <a href="#注册">注册</a>
+      </li>
+      <li>
+        <a href="#入口">入口</a>
+      </li>
+      <li>
+        <a href="#处理">处理</a>
+      </li>
+      <li>
+        <a href="#路由">路由</a>
+      </li>
+    </ul>
+  </li>
+</ul>
+<p></p>
+<h3 id="注册" data-source-line="518"><a class="anchor" href="#注册"><span class="octicon octicon-link"></span></a>注册</h3>
+<h4 id="中间件注册" data-source-line="519"><a class="anchor" href="#中间件注册"><span class="octicon octicon-link"></span></a>中间件注册</h4>
+<ul data-source-line="520">
+<li>把全局的中间件注册到路由，每一个请求的handlerChain都会附加上该中间件，包括404，405以及静态文件</li>
+<li>例如：日志、错误处理等都可以注册成中间件</li>
+<li>中间件注册的时候不需要指定路径，默认是所有路径都注册上所有中间件，如何实现这点？</li>
+<li>
+<ol>
+<li>要确保中间件在路径之前注册，中间件注册实际上是将handlers暂存到RouterGroup.Handlers中</li>
+</ol>
+</li>
+<li>
+<ol start="2">
+<li>待路径注册的时候，将路径指定的handlers跟RouterGroup.Handlers合并后一起注册，这样就实现了每个路径都有中间件的handler</li>
+</ol>
+</li>
+</ul>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(engine *Engine)</span> <span class="hljs-title">Use</span><span class="hljs-params">(middleware ...HandlerFunc)</span> <span class="hljs-title">IRoutes</span></span> {
+        <span class="hljs-comment">// 调用RouterGroup的Use方法注册中间件</span>
+	engine.RouterGroup.Use(middleware...)
+	engine.rebuild404Handlers()
+	engine.rebuild405Handlers()
+	<span class="hljs-keyword">return</span> engine
+        
+<span class="hljs-comment">// Use adds middleware to the group, see example code in github.</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(group *RouterGroup)</span> <span class="hljs-title">Use</span><span class="hljs-params">(middleware ...HandlerFunc)</span> <span class="hljs-title">IRoutes</span></span> {
+        <span class="hljs-comment">// 将中间件注册到group.Handlers，这个Handlers会在后续注册路径的时候被一并加到路由树中</span>
+	group.Handlers = <span class="hljs-built_in">append</span>(group.Handlers, middleware...)
+	<span class="hljs-keyword">return</span> group.returnObj()
+}
+}</code></pre><h4 id="路径url注册" data-source-line="541"><a class="anchor" href="#路径url注册"><span class="octicon octicon-link"></span></a>路径（URL）注册</h4>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(group *RouterGroup)</span> <span class="hljs-title">POST</span><span class="hljs-params">(relativePath <span class="hljs-keyword">string</span>, handlers ...HandlerFunc)</span> <span class="hljs-title">IRoutes</span></span> {
+	<span class="hljs-keyword">return</span> group.handle(<span class="hljs-string">"POST"</span>, relativePath, handlers)
+}
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(group *RouterGroup)</span> <span class="hljs-title">handle</span><span class="hljs-params">(httpMethod, relativePath <span class="hljs-keyword">string</span>, handlers HandlersChain)</span> <span class="hljs-title">IRoutes</span></span> {
+        <span class="hljs-comment">// 获取绝对路径，basePath + relativePath</span>
+	absolutePath := group.calculateAbsolutePath(relativePath)
+        <span class="hljs-comment">// 合并handlerChain，将当前的handlers和原group.handlerChain合并，返回合并后的handlerChain，此处合并的目的是为了将之前中间件的handlers与当前注册的handlers进行合并</span>
+	handlers = group.combineHandlers(handlers)
+        <span class="hljs-comment">// 添加路由，根据http method找到root，在字典树中插入path及对应的handlers，详见路由</span>
+	group.engine.addRoute(httpMethod, absolutePath, handlers)
+	<span class="hljs-keyword">return</span> group.returnObj()
+}</code></pre><h3 id="入口" data-source-line="559"><a class="anchor" href="#入口"><span class="octicon octicon-link"></span></a>入口</h3>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(engine *Engine)</span> <span class="hljs-title">Run</span><span class="hljs-params">(addr ...<span class="hljs-keyword">string</span>)</span> <span class="hljs-params">(err error)</span></span> {
+	<span class="hljs-keyword">defer</span> <span class="hljs-function"><span class="hljs-keyword">func</span><span class="hljs-params">()</span></span> { debugPrintError(err) }()
+        <span class="hljs-comment">// 地址校验</span>
+	address := resolveAddress(addr)
+	debugPrint(<span class="hljs-string">"Listening and serving HTTP on %s\n"</span>, address)
+        <span class="hljs-comment">// 调用go原生库http的监听，此处可见gin的engine必然实现了ServeHTTP</span>
+	err = http.ListenAndServe(address, engine)
+	<span class="hljs-keyword">return</span>
+}
+
+<span class="hljs-keyword">type</span> Context <span class="hljs-keyword">struct</span> {
+	writermem responseWriter <span class="hljs-comment">// 封装了http.ResponseWriter</span>
+	Request   *http.Request <span class="hljs-comment">// 请求实体</span>
+	Writer    ResponseWriter <span class="hljs-comment">// 应答类</span>
+	Params   Params <span class="hljs-comment">// 参数列表</span>
+	handlers HandlersChain <span class="hljs-comment">// handler链（调用链）</span>
+	index    <span class="hljs-keyword">int8</span> <span class="hljs-comment">// handler链游标</span>
+	engine *Engine <span class="hljs-comment">// 所属Engine</span>
+	Keys <span class="hljs-keyword">map</span>[<span class="hljs-keyword">string</span>]<span class="hljs-keyword">interface</span>{} <span class="hljs-comment">// 请求的上下文，kv形式</span>
+	Errors errorMsgs <span class="hljs-comment">// 该上下文所经过的所有句柄或中间件产生的错误汇集成链表</span>
+	<span class="hljs-comment">// Accepted defines a list of manually accepted formats for content negotiation.</span>
+	Accepted []<span class="hljs-keyword">string</span> <span class="hljs-comment">// 用于内容协商的手动接受格式的列表</span>
+}
+
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(engine *Engine)</span> <span class="hljs-title">ServeHTTP</span><span class="hljs-params">(w http.ResponseWriter, req *http.Request)</span></span> {
+        <span class="hljs-comment">// 从缓冲池获取Context，Context结构见下文</span>
+	c := engine.pool.Get().(*Context)
+        <span class="hljs-comment">// 将Context对象进行初始化，抹除上次使用的痕迹</span>
+	c.writermem.reset(w)
+	c.Request = req
+	c.reset()
+        <span class="hljs-comment">// 开始处理HTTP请求</span>
+	engine.handleHTTPRequest(c)
+        <span class="hljs-comment">// 将Context归还缓冲池</span>
+	engine.pool.Put(c)
+}</code></pre><h3 id="处理" data-source-line="599"><a class="anchor" href="#处理"><span class="octicon octicon-link"></span></a>处理</h3>
+<p data-source-line="600">整体请求处理路径如下：</p>
+<div class="mermaid" data-processed="true"><svg id="mermaidChart15" xmlns="http://www.w3.org/2000/svg" height="100%" viewBox="0 0 389.53125 255" style="max-width:389.53125px;"><style type="text/css" title="mermaid-svg-internal-css">/*  */
+#mermaidChart15 .node&gt;rect { ; }
+#mermaidChart15 .node text  { fill:#000; stroke:none; font-weight:300; font-family:"Helvetica Neue",Helvetica,Arial,sans-serf; font-size:14px; }
+#mermaidChart15 .edgeLabel text  { fill:#000; stroke:none; font-weight:300; font-family:"Helvetica Neue",Helvetica,Arial,sans-serf; font-size:14px; }
+#mermaidChart15 .cluster rect  { rx:4px; fill: rgb(255, 255, 222); rx: 4px; stroke: rgb(170, 170, 51); stroke-width: 1px; }
+.markdown-body * { box-sizing: border-box;}
+.mermaid .label { color: rgb(51, 51, 51);}
+.node circle, .node ellipse, .node polygon, .node rect { fill: rgb(236, 236, 255); stroke: rgb(204, 204, 255); stroke-width: 1px;}
+.arrowheadPath { fill: rgb(51, 51, 51);}
+.edgePath .path { stroke: rgb(51, 51, 51);}
+.edgeLabel { background-color: rgb(232, 232, 232);}
+.cluster rect { fill: rgb(255, 255, 222) !important; rx: 4px !important; stroke: rgb(170, 170, 51) !important; stroke-width: 1px !important;}
+.cluster text { fill: rgb(51, 51, 51);}
+/*  */
+</style><g><g class="output"><g class="clusters"><g class="cluster" id="subGraph2" transform="translate(184.765625,117.5)" style="opacity: 1;"><rect width="329.53125" height="195" x="-164.765625" y="-97.5"></rect><g class="label"><g transform="translate(0,0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"></div></foreignObject></g></g><text x="0" y="-83.5" fill="black" stroke="none" id="mermaidChart15Text" style="text-anchor: middle;"> 中间件1</text></g><g class="cluster" id="subGraph1" transform="translate(184.765625,117.5)" style="opacity: 1;"><rect width="279.53125" height="155" x="-139.765625" y="-77.5"></rect><g class="label"><g transform="translate(0,0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"></div></foreignObject></g></g><text x="0" y="-63.5" fill="black" stroke="none" id="mermaidChart15Text" style="text-anchor: middle;"> Next:中间件n</text></g><g class="cluster" id="subGraph0" transform="translate(184.765625,117.5)" style="opacity: 1;"><rect width="229.53125" height="115" x="-114.765625" y="-57.5"></rect><g class="label"><g transform="translate(0,0)"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"></div></foreignObject></g></g><text x="0" y="-43.5" fill="black" stroke="none" id="mermaidChart15Text" style="text-anchor: middle;"> Next:请求处理handler</text></g></g><g class="edgePaths"><g class="edgePath" style="opacity: 1;"><path class="path" d="M168.359375,117.5L193.359375,117.5L218.359375,117.5" marker-end="url(file:///Applications/Markdown%20Plus.app/Contents/Resources/markdown-core/index.html#arrowhead11)" style="fill:none"></path><defs><marker id="arrowhead11" viewBox="0 0 10 10" refX="9" refY="5" markerUnits="strokeWidth" markerWidth="8" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" class="arrowheadPath" style="stroke-width: 1px; stroke-dasharray: 1px, 0px;"></path></marker></defs></g></g><g class="edgeLabels"><g class="edgeLabel" transform="" style="opacity: 1;"><g transform="translate(0,0)" class="label"><foreignObject width="0" height="0"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;"><span class="edgeLabel"></span></div></foreignObject></g></g></g><g class="nodes"><g class="node" id="handler" transform="translate(131.6796875,117.5)" style="opacity: 1;"><rect rx="0" ry="0" x="-36.6796875" y="-22.5" width="73.359375" height="45"></rect><g class="label" transform="translate(0,0)"><g transform="translate(-26.6796875,-12.5)"><foreignObject width="53.359375" height="25"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;">handler</div></foreignObject></g></g></g><g class="node" id="done" transform="translate(246.4453125,117.5)" style="opacity: 1;"><rect rx="0" ry="0" x="-28.0859375" y="-22.5" width="56.171875" height="45"></rect><g class="label" transform="translate(0,0)"><g transform="translate(-18.0859375,-12.5)"><foreignObject width="36.171875" height="25"><div xmlns="http://www.w3.org/1999/xhtml" style="display: inline-block; white-space: nowrap;">done</div></foreignObject></g></g></g></g></g></g></svg></div><p data-source-line="612">实际上是通过前一个中间件调用Next来推动调用链遍历，这里有个巧妙的地方：调用链之间并非固定只能按照串行链式处理，也就是说并不是一定要处理完前一个handler之后，再处理下一个handler，而通常是处理一个handler到中间的时候调入下一个handler，类似压栈的方式，本质上是因为注册handler实际上是一个个的回调。而这给了handler极大的自由度，可以决定下一个handler介入的时机。举个例子，如果某个handler是为了计算整个过程的耗时，那么handler可能会如下这样实现，实际上ginex默认加载的计时打点就是如此做的：</p>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">handler</span><span class="hljs-params">(c *Context)</span></span> {
+    startTime := now()
+    <span class="hljs-comment">// 触发后面的调用链，该函数返回的时候，后续所有调用链必然已经遍历完</span>
+    c.Next()
+    <span class="hljs-comment">// 此时，在当前handler之后的所有handlers必然都已完成调用</span>
+    endTime := now()
+    latency := endTime - startTime
+    <span class="hljs-comment">// 上报数据</span>
+    report(latency)
+}</code></pre><p data-source-line="625">当然，也可以不使用该特性，那么上层的中间件（只是请求开头的ServeHTTP会这样）也还是会一次把handler调用一遍，毕竟请求开始时一定会调用Next()开启遍历</p>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-title">handler</span><span class="hljs-params">(c *Context)</span></span> {
+    doSomething()
+}</code></pre><p data-source-line="631">那么这里有一个问题，假设请求开始必然使用Next开始遍历所有中间件，那么在遍历中间件的过程中，调用Next应该会造成嵌套？实际上不会，因为Next不只是单纯遍历中间件，还在Context中保留一个遍历指针index，确保所有的中间件都可以安全调用Next，而且保证所有中间件只能被调用到一次</p>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(engine *Engine)</span> <span class="hljs-title">handleHTTPRequest</span><span class="hljs-params">(c *Context)</span></span> {
+	httpMethod := c.Request.Method
+	path := c.Request.URL.Path
+	unescape := <span class="hljs-literal">false</span>
+        <span class="hljs-comment">// 如果使用RawPath特性，则path修正为RawPath</span>
+	<span class="hljs-keyword">if</span> engine.UseRawPath &amp;&amp; <span class="hljs-built_in">len</span>(c.Request.URL.RawPath) &gt; <span class="hljs-number">0</span> {
+		path = c.Request.URL.RawPath
+		unescape = engine.UnescapePathValues
+	}
+
+        <span class="hljs-comment">// 根据请求的HTTP method，找到相应的method tree的根节点，因为method可枚举的数量很少，此处使用数组遍历效率更高</span>
+	t := engine.trees <span class="hljs-comment">// method tree</span>
+	<span class="hljs-keyword">for</span> i, tl := <span class="hljs-number">0</span>, <span class="hljs-built_in">len</span>(t); i &lt; tl; i++ {
+		<span class="hljs-keyword">if</span> t[i].method == httpMethod { <span class="hljs-comment">// 找到匹配的method</span>
+			root := t[i].root
+			<span class="hljs-comment">// 从树根开始查找路由，返回该路径对应的handler链，详见路由篇</span>
+			handlers, params, tsr := root.getValue(path, c.Params, unescape)
+			<span class="hljs-keyword">if</span> handlers != <span class="hljs-literal">nil</span> { <span class="hljs-comment">// 成功获取handler链</span>
+				c.handlers = handlers
+				c.Params = params
+                                <span class="hljs-comment">// 遍历handler链，顺序执行所有handler，handler内容为路径添加的handler或中间件</span>
+				c.Next()
+                                <span class="hljs-comment">// 发送应答头部，只一次，会把http状态码放入头部</span>
+                                <span class="hljs-comment">// 如果没有这个步骤，直接使用Write，会隐式触发WriteHeader，但是状态码默认是给200 OK</span>
+				c.writermem.WriteHeaderNow()
+                                <span class="hljs-comment">// 返回，为何没有调用Write呢？因为需要每个handler自己Write到body</span>
+				<span class="hljs-keyword">return</span>
+			}
+			<span class="hljs-keyword">if</span> httpMethod != <span class="hljs-string">"CONNECT"</span> &amp;&amp; path != <span class="hljs-string">"/"</span> {
+				<span class="hljs-keyword">if</span> tsr &amp;&amp; engine.RedirectTrailingSlash {
+					redirectTrailingSlash(c)
+					<span class="hljs-keyword">return</span>
+				}
+				<span class="hljs-keyword">if</span> engine.RedirectFixedPath &amp;&amp; redirectFixedPath(c, root, engine.RedirectFixedPath) {
+					<span class="hljs-keyword">return</span>
+				}
+			}
+			<span class="hljs-keyword">break</span>
+		}
+	}
+
+	<span class="hljs-keyword">if</span> engine.HandleMethodNotAllowed {
+		<span class="hljs-keyword">for</span> _, tree := <span class="hljs-keyword">range</span> engine.trees {
+			<span class="hljs-keyword">if</span> tree.method != httpMethod {
+				<span class="hljs-keyword">if</span> handlers, _, _ := tree.root.getValue(path, <span class="hljs-literal">nil</span>, unescape); handlers != <span class="hljs-literal">nil</span> {
+					c.handlers = engine.allNoMethod
+					serveError(c, http.StatusMethodNotAllowed, default405Body)
+					<span class="hljs-keyword">return</span>
+				}
+			}
+		}
+	}
+	c.handlers = engine.allNoRoute
+	serveError(c, http.StatusNotFound, default404Body)
+}
+
+<span class="hljs-comment">// 注意该函数一旦触发，一定会将所有的handlers遍历调用</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(c *Context)</span> <span class="hljs-title">Next</span><span class="hljs-params">()</span></span> {
+	c.index++
+	<span class="hljs-keyword">for</span> s := <span class="hljs-keyword">int8</span>(<span class="hljs-built_in">len</span>(c.handlers)); c.index &lt; s; c.index++ {
+		c.handlers[c.index](c)
+	}
+}</code></pre><h3 id="路由" data-source-line="698"><a class="anchor" href="#路由"><span class="octicon octicon-link"></span></a>路由</h3>
+<h4 id="参考" data-source-line="699"><a class="anchor" href="#参考"><span class="octicon octicon-link"></span></a>参考</h4>
+<blockquote data-source-line="700">
+<p><a href="https://michaelyou.github.io/2018/02/10/%E8%B7%AF%E7%94%B1%E6%9F%A5%E6%89%BE%E4%B9%8BRadix-Tree/">https://michaelyou.github.io/2018/02/10/路由查找之Radix-Tree/</a></p>
+</blockquote>
+<h4 id="数据结构" data-source-line="703"><a class="anchor" href="#数据结构"><span class="octicon octicon-link"></span></a>数据结构</h4>
+<pre><code class="hljs"><span class="hljs-keyword">type</span> node <span class="hljs-keyword">struct</span> {
+    <span class="hljs-comment">// 节点路径，比如上面的s，earch，和upport</span>
+    path      <span class="hljs-keyword">string</span>
+    <span class="hljs-comment">// 节点是否是参数节点，比如上面的:post</span>
+    wildChild <span class="hljs-keyword">bool</span>
+    <span class="hljs-comment">// 节点类型，包括static, root, param, catchAll</span>
+    <span class="hljs-comment">// static: 静态节点，比如上面的s，earch等节点</span>
+    <span class="hljs-comment">// root: 树的根节点</span>
+    <span class="hljs-comment">// catchAll: 有*匹配的节点</span>
+    <span class="hljs-comment">// param: 参数节点</span>
+    nType     nodeType
+    <span class="hljs-comment">// 路径上最大参数个数</span>
+    maxParams <span class="hljs-keyword">uint8</span>
+    <span class="hljs-comment">// 和children字段对应, 保存的是分裂的分支的第一个字符</span>
+    <span class="hljs-comment">// 例如search和support, 那么s节点的indices对应的"eu"</span>
+    <span class="hljs-comment">// 代表有两个分支, 分支的首字母分别是e和u</span>
+    indices   <span class="hljs-keyword">string</span>
+    <span class="hljs-comment">// 儿子节点</span>
+    children  []*node
+    <span class="hljs-comment">// 处理函数</span>
+    handlers  HandlersChain
+    <span class="hljs-comment">// 优先级，子节点注册的handler数量</span>
+    priority  <span class="hljs-keyword">uint32</span>
+}</code></pre><h4 id="添加路由" data-source-line="730"><a class="anchor" href="#添加路由"><span class="octicon octicon-link"></span></a>添加路由</h4>
+<pre><code class="hljs"><span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(n *node)</span> <span class="hljs-title">addRoute</span><span class="hljs-params">(path <span class="hljs-keyword">string</span>, handlers HandlersChain)</span></span> {
+    fullPath := path
+    n.priority++
+    numParams := countParams(path)
+    <span class="hljs-comment">// non-empty tree</span>
+    <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.path) &gt; <span class="hljs-number">0</span> || <span class="hljs-built_in">len</span>(n.children) &gt; <span class="hljs-number">0</span> {
+    walk:
+        <span class="hljs-keyword">for</span> {
+            <span class="hljs-comment">// Update maxParams of the current node</span>
+            <span class="hljs-keyword">if</span> numParams &gt; n.maxParams {
+                n.maxParams = numParams
+            }
+            <span class="hljs-comment">// Find the longest common prefix.</span>
+            <span class="hljs-comment">// This also implies that the common prefix contains no ':' or '*'</span>
+            <span class="hljs-comment">// since the existing key can't contain those chars.</span>
+            i := <span class="hljs-number">0</span>
+            max := min(<span class="hljs-built_in">len</span>(path), <span class="hljs-built_in">len</span>(n.path))
+            <span class="hljs-keyword">for</span> i &lt; max &amp;&amp; path[i] == n.path[i] {
+                i++
+            }
+            <span class="hljs-comment">// Split edge</span>
+            <span class="hljs-comment">// 开始分裂，比如一开始path是search，新来了support，s是他们匹配的部分，</span>
+            <span class="hljs-comment">// 那么会将s拿出来作为parent节点，增加earch和upport作为child节点</span>
+            <span class="hljs-keyword">if</span> i &lt; <span class="hljs-built_in">len</span>(n.path) {
+                child := node{
+                    path:      n.path[i:],  <span class="hljs-comment">// 不匹配的部分作为child节点</span>
+                    wildChild: n.wildChild,
+                    indices:   n.indices,
+                    children:  n.children,
+                    handlers:  n.handlers,
+                    priority:  n.priority - <span class="hljs-number">1</span>,  <span class="hljs-comment">// 降级成子节点，priority减1</span>
+                }
+                <span class="hljs-comment">// Update maxParams (max of all children)</span>
+                <span class="hljs-keyword">for</span> i := <span class="hljs-keyword">range</span> child.children {
+                    <span class="hljs-keyword">if</span> child.children[i].maxParams &gt; child.maxParams {
+                        child.maxParams = child.children[i].maxParams
+                    }
+                }
+                
+                <span class="hljs-comment">// 当前节点的子节点变成刚刚分裂的出来的节点</span>
+                n.children = []*node{&amp;child}
+                <span class="hljs-comment">// []byte for proper unicode char conversion, see #65</span>
+                n.indices = <span class="hljs-keyword">string</span>([]<span class="hljs-keyword">byte</span>{n.path[i]})
+                n.path = path[:i]
+                n.handlers = <span class="hljs-literal">nil</span>
+                n.wildChild = <span class="hljs-literal">false</span>
+            }
+            <span class="hljs-comment">// Make new node a child of this node</span>
+            <span class="hljs-comment">// 将新来的节点插入新的parent节点作为子节点</span>
+            <span class="hljs-keyword">if</span> i &lt; <span class="hljs-built_in">len</span>(path) {
+                path = path[i:]
+					<span class="hljs-comment">// 如果是参数节点（包含:或*）</span>
+                <span class="hljs-keyword">if</span> n.wildChild {
+                    n = n.children[<span class="hljs-number">0</span>]
+                    n.priority++
+                    <span class="hljs-comment">// Update maxParams of the child node</span>
+                    <span class="hljs-keyword">if</span> numParams &gt; n.maxParams {
+                        n.maxParams = numParams
+                    }
+                    numParams--
+                    <span class="hljs-comment">// Check if the wildcard matches</span>
+                    <span class="hljs-comment">// 例如：/blog/:pp 和 /blog/:ppp，需要检查更长的通配符</span>
+                    <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(path) &gt;= <span class="hljs-built_in">len</span>(n.path) &amp;&amp; n.path == path[:<span class="hljs-built_in">len</span>(n.path)] {
+                        <span class="hljs-comment">// check for longer wildcard, e.g. :name and :names</span>
+                        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.path) &gt;= <span class="hljs-built_in">len</span>(path) || path[<span class="hljs-built_in">len</span>(n.path)] == <span class="hljs-string">'/'</span> {
+                            <span class="hljs-keyword">continue</span> walk
+                        }
+                    }
+                    <span class="hljs-built_in">panic</span>(<span class="hljs-string">"path segment '"</span> + path +
+                        <span class="hljs-string">"' conflicts with existing wildcard '"</span> + n.path +
+                        <span class="hljs-string">"' in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+                }
+					<span class="hljs-comment">// 首字母，用来与indices做比较</span>
+                c := path[<span class="hljs-number">0</span>]
+                <span class="hljs-comment">// slash after param</span>
+                <span class="hljs-keyword">if</span> n.nType == param &amp;&amp; c == <span class="hljs-string">'/'</span> &amp;&amp; <span class="hljs-built_in">len</span>(n.children) == <span class="hljs-number">1</span> {
+                    n = n.children[<span class="hljs-number">0</span>]
+                    n.priority++
+                    <span class="hljs-keyword">continue</span> walk
+                }
+                <span class="hljs-comment">// Check if a child with the next path byte exists</span>
+                <span class="hljs-comment">// 判断子节点中是否有和当前path有匹配的，只需要查看子节点path的第一个字母即可，即indices</span>
+                <span class="hljs-comment">// 比如s的子节点现在是earch和upport，indices为eu</span>
+                <span class="hljs-comment">// 如果新来的路由为super，那么就是和upport有匹配的部分u，将继续分类现在的upport节点</span>
+                <span class="hljs-keyword">for</span> i := <span class="hljs-number">0</span>; i &lt; <span class="hljs-built_in">len</span>(n.indices); i++ {
+                    <span class="hljs-keyword">if</span> c == n.indices[i] {
+                        i = n.incrementChildPrio(i)
+                        n = n.children[i]
+                        <span class="hljs-keyword">continue</span> walk
+                    }
+                }
+                <span class="hljs-comment">// Otherwise insert it</span>
+                <span class="hljs-keyword">if</span> c != <span class="hljs-string">':'</span> &amp;&amp; c != <span class="hljs-string">'*'</span> {
+                    <span class="hljs-comment">// []byte for proper unicode char conversion, see #65</span>
+                    <span class="hljs-comment">// 记录第一个字符，放在indices中</span>
+                    n.indices += <span class="hljs-keyword">string</span>([]<span class="hljs-keyword">byte</span>{c})
+                    child := &amp;node{
+                        maxParams: numParams,
+                    }
+                    <span class="hljs-comment">// 增加子节点</span>
+                    n.children = <span class="hljs-built_in">append</span>(n.children, child)
+                    n.incrementChildPrio(<span class="hljs-built_in">len</span>(n.indices) - <span class="hljs-number">1</span>)
+                    n = child
+                }
+                n.insertChild(numParams, path, fullPath, handlers)
+                <span class="hljs-keyword">return</span>
+            } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> i == <span class="hljs-built_in">len</span>(path) { <span class="hljs-comment">// Make node a (in-path) leaf</span>
+                <span class="hljs-comment">// 路径相同，如果已有handler就报错，没有就赋值</span>
+                <span class="hljs-keyword">if</span> n.handlers != <span class="hljs-literal">nil</span> {
+                    <span class="hljs-built_in">panic</span>(<span class="hljs-string">"handlers are already registered for path ''"</span> + fullPath + <span class="hljs-string">"'"</span>)
+                }
+                n.handlers = handlers
+            }
+            <span class="hljs-keyword">return</span>
+        }
+    } <span class="hljs-keyword">else</span> { <span class="hljs-comment">// Empty tree，空树，插入节点，节点种类是root</span>
+        n.insertChild(numParams, path, fullPath, handlers)
+        n.nType = root
+    }
+}</code></pre><h4 id="插入子节点" data-source-line="854"><a class="anchor" href="#插入子节点"><span class="octicon octicon-link"></span></a>插入子节点</h4>
+<pre><code class="hljs"><span class="hljs-comment">// @1: 参数个数</span>
+<span class="hljs-comment">// @2: 路径</span>
+<span class="hljs-comment">// @3: 完整路径</span>
+<span class="hljs-comment">// @4: 处理函数</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(n *node)</span> <span class="hljs-title">insertChild</span><span class="hljs-params">(numParams <span class="hljs-keyword">uint8</span>, path <span class="hljs-keyword">string</span>, fullPath <span class="hljs-keyword">string</span>, handlers HandlersChain)</span></span> {
+    <span class="hljs-keyword">var</span> offset <span class="hljs-keyword">int</span> <span class="hljs-comment">// already handled bytes of the path</span>
+    <span class="hljs-comment">// find prefix until first wildcard (beginning with ':'' or '*'')</span>
+    <span class="hljs-comment">// 找到前缀，只要匹配到wildcard</span>
+    <span class="hljs-keyword">for</span> i, max := <span class="hljs-number">0</span>, <span class="hljs-built_in">len</span>(path); numParams &gt; <span class="hljs-number">0</span>; i++ {
+        c := path[i]
+        <span class="hljs-keyword">if</span> c != <span class="hljs-string">':'</span> &amp;&amp; c != <span class="hljs-string">'*'</span> {
+            <span class="hljs-keyword">continue</span>
+        }
+        <span class="hljs-comment">// find wildcard end (either '/' or path end)</span>
+        end := i + <span class="hljs-number">1</span>
+        <span class="hljs-keyword">for</span> end &lt; max &amp;&amp; path[end] != <span class="hljs-string">'/'</span> {
+            <span class="hljs-keyword">switch</span> path[end] {
+            <span class="hljs-comment">// the wildcard name must not contain ':' and '*'</span>
+            <span class="hljs-keyword">case</span> <span class="hljs-string">':'</span>, <span class="hljs-string">'*'</span>:
+                <span class="hljs-built_in">panic</span>(<span class="hljs-string">"only one wildcard per path segment is allowed, has: '"</span> +
+                    path[i:] + <span class="hljs-string">"' in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+            <span class="hljs-keyword">default</span>:
+                end++
+            }
+        }
+        <span class="hljs-comment">// check if this Node existing children which would be</span>
+        <span class="hljs-comment">// unreachable if we insert the wildcard here</span>
+        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.children) &gt; <span class="hljs-number">0</span> {
+            <span class="hljs-built_in">panic</span>(<span class="hljs-string">"wildcard route '"</span> + path[i:end] +
+                <span class="hljs-string">"' conflicts with existing children in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+        }
+        <span class="hljs-comment">// check if the wildcard has a name</span>
+        <span class="hljs-keyword">if</span> end-i &lt; <span class="hljs-number">2</span> {
+            <span class="hljs-built_in">panic</span>(<span class="hljs-string">"wildcards must be named with a non-empty name in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+        }
+        <span class="hljs-keyword">if</span> c == <span class="hljs-string">':'</span> { <span class="hljs-comment">// param</span>
+            <span class="hljs-comment">// split path at the beginning of the wildcard</span>
+            <span class="hljs-keyword">if</span> i &gt; <span class="hljs-number">0</span> {
+                n.path = path[offset:i]
+                offset = i
+            }
+            child := &amp;node{
+                nType:     param,
+                maxParams: numParams,
+            }
+            n.children = []*node{child}
+            n.wildChild = <span class="hljs-literal">true</span>
+            n = child
+            n.priority++
+            numParams--
+            <span class="hljs-comment">// if the path doesn't end with the wildcard, then there</span>
+            <span class="hljs-comment">// will be another non-wildcard subpath starting with '/'</span>
+            <span class="hljs-keyword">if</span> end &lt; max {
+                n.path = path[offset:end]
+                offset = end
+                
+                child := &amp;node{
+                    maxParams: numParams,
+                    priority:  <span class="hljs-number">1</span>,
+                }
+                n.children = []*node{child}
+                <span class="hljs-comment">// 下次循环这个新的child节点</span>
+                n = child
+            }
+        } <span class="hljs-keyword">else</span> { <span class="hljs-comment">// catchAll</span>
+            <span class="hljs-keyword">if</span> end != max || numParams &gt; <span class="hljs-number">1</span> {
+                <span class="hljs-built_in">panic</span>(<span class="hljs-string">"catch-all routes are only allowed at the end of the path in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+            }
+            <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.path) &gt; <span class="hljs-number">0</span> &amp;&amp; n.path[<span class="hljs-built_in">len</span>(n.path)<span class="hljs-number">-1</span>] == <span class="hljs-string">'/'</span> {
+                <span class="hljs-built_in">panic</span>(<span class="hljs-string">"catch-all conflicts with existing handle for the path segment root in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+            }
+            <span class="hljs-comment">// currently fixed width 1 for '/'</span>
+            i--
+            <span class="hljs-keyword">if</span> path[i] != <span class="hljs-string">'/'</span> {
+                <span class="hljs-built_in">panic</span>(<span class="hljs-string">"no / before catch-all in path '"</span> + fullPath + <span class="hljs-string">"'"</span>)
+            }
+            n.path = path[offset:i]
+            <span class="hljs-comment">// first node: catchAll node with empty path</span>
+            child := &amp;node{
+                wildChild: <span class="hljs-literal">true</span>,
+                nType:     catchAll,
+                maxParams: <span class="hljs-number">1</span>,
+            }
+            n.children = []*node{child}
+            n.indices = <span class="hljs-keyword">string</span>(path[i])
+            n = child
+            n.priority++
+            <span class="hljs-comment">// second node: node holding the variable</span>
+            child = &amp;node{
+                path:      path[i:],
+                nType:     catchAll,
+                maxParams: <span class="hljs-number">1</span>,
+                handlers:  handlers,
+                priority:  <span class="hljs-number">1</span>,
+            }
+            n.children = []*node{child}
+            <span class="hljs-keyword">return</span>
+        }
+    }
+    <span class="hljs-comment">// insert remaining path part and handle to the leaf</span>
+    n.path = path[offset:]
+    n.handlers = handlers
+}</code></pre><h4 id="路径查找" data-source-line="962"><a class="anchor" href="#路径查找"><span class="octicon octicon-link"></span></a>路径查找</h4>
+<pre><code class="hljs"><span class="hljs-comment">// Returns the handle registered with the given path (key). The values of</span>
+<span class="hljs-comment">// wildcards are saved to a map.</span>
+<span class="hljs-comment">// If no handle can be found, a TSR (trailing slash redirect) recommendation is</span>
+<span class="hljs-comment">// made if a handle exists with an extra (without the) trailing slash for the</span>
+<span class="hljs-comment">// given path.</span>
+<span class="hljs-function"><span class="hljs-keyword">func</span> <span class="hljs-params">(n *node)</span> <span class="hljs-title">getValue</span><span class="hljs-params">(path <span class="hljs-keyword">string</span>, po Params, unescape <span class="hljs-keyword">bool</span>)</span> <span class="hljs-params">(handlers HandlersChain, p Params, tsr <span class="hljs-keyword">bool</span>)</span></span> {
+    p = po
+walk: <span class="hljs-comment">// Outer loop for walking the tree</span>
+    <span class="hljs-keyword">for</span> {
+        <span class="hljs-comment">// 尚未到达path的终点</span>
+        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(path) &gt; <span class="hljs-built_in">len</span>(n.path) {
+            <span class="hljs-comment">// 前面一段需要一致</span>
+            <span class="hljs-keyword">if</span> path[:<span class="hljs-built_in">len</span>(n.path)] == n.path {
+                path = path[<span class="hljs-built_in">len</span>(n.path):]
+                <span class="hljs-comment">// If this node does not have a wildcard (param or catchAll)</span>
+                <span class="hljs-comment">// child,  we can just look up the next child node and continue</span>
+                <span class="hljs-comment">// to walk down the tree</span>
+                <span class="hljs-keyword">if</span> !n.wildChild {
+                    c := path[<span class="hljs-number">0</span>]
+                    <span class="hljs-keyword">for</span> i := <span class="hljs-number">0</span>; i &lt; <span class="hljs-built_in">len</span>(n.indices); i++ {
+                        <span class="hljs-keyword">if</span> c == n.indices[i] {
+                            n = n.children[i]
+                            <span class="hljs-keyword">continue</span> walk
+                        }
+                    }
+                    <span class="hljs-comment">// Nothing found.</span>
+                    <span class="hljs-comment">// We can recommend to redirect to the same URL without a</span>
+                    <span class="hljs-comment">// trailing slash if a leaf exists for that path.</span>
+                    tsr = (path == <span class="hljs-string">"/"</span> &amp;&amp; n.handlers != <span class="hljs-literal">nil</span>)
+                    <span class="hljs-keyword">return</span>
+                }
+                <span class="hljs-comment">// handle wildcard child</span>
+                n = n.children[<span class="hljs-number">0</span>]
+                <span class="hljs-keyword">switch</span> n.nType {
+                <span class="hljs-keyword">case</span> param:
+                    <span class="hljs-comment">// find param end (either '/' or path end)</span>
+                    end := <span class="hljs-number">0</span>
+                    <span class="hljs-keyword">for</span> end &lt; <span class="hljs-built_in">len</span>(path) &amp;&amp; path[end] != <span class="hljs-string">'/'</span> {
+                        end++
+                    }
+                    <span class="hljs-comment">// save param value</span>
+                    <span class="hljs-keyword">if</span> <span class="hljs-built_in">cap</span>(p) &lt; <span class="hljs-keyword">int</span>(n.maxParams) {
+                        p = <span class="hljs-built_in">make</span>(Params, <span class="hljs-number">0</span>, n.maxParams)
+                    }
+                    i := <span class="hljs-built_in">len</span>(p)
+                    p = p[:i+<span class="hljs-number">1</span>] <span class="hljs-comment">// expand slice within preallocated capacity</span>
+                    p[i].Key = n.path[<span class="hljs-number">1</span>:]
+                    val := path[:end]
+                    <span class="hljs-keyword">if</span> unescape {
+                        <span class="hljs-keyword">var</span> err error
+                        <span class="hljs-keyword">if</span> p[i].Value, err = url.QueryUnescape(val); err != <span class="hljs-literal">nil</span> {
+                            p[i].Value = val <span class="hljs-comment">// fallback, in case of error</span>
+                        }
+                    } <span class="hljs-keyword">else</span> {
+                        p[i].Value = val
+                    }
+                    <span class="hljs-comment">// we need to go deeper!</span>
+                                        <span class="hljs-keyword">if</span> end &lt; <span class="hljs-built_in">len</span>(path) {
+                        <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.children) &gt; <span class="hljs-number">0</span> {
+                            path = path[end:]
+                            n = n.children[<span class="hljs-number">0</span>]
+                            <span class="hljs-keyword">continue</span> walk
+                        }
+                        <span class="hljs-comment">// ... but we can't</span>
+                        tsr = (<span class="hljs-built_in">len</span>(path) == end+<span class="hljs-number">1</span>)
+                        <span class="hljs-keyword">return</span>
+                    }
+                    <span class="hljs-keyword">if</span> handlers = n.handlers; handlers != <span class="hljs-literal">nil</span> {
+                        <span class="hljs-keyword">return</span>
+                    }
+                    <span class="hljs-keyword">if</span> <span class="hljs-built_in">len</span>(n.children) == <span class="hljs-number">1</span> {
+                        <span class="hljs-comment">// No handle found. Check if a handle for this path + a</span>
+                        <span class="hljs-comment">// trailing slash exists for TSR recommendation</span>
+                        n = n.children[<span class="hljs-number">0</span>]
+                        tsr = (n.path == <span class="hljs-string">"/"</span> &amp;&amp; n.handlers != <span class="hljs-literal">nil</span>)
+                    }
+                    <span class="hljs-keyword">return</span>
+                <span class="hljs-keyword">case</span> catchAll:
+                    <span class="hljs-comment">// save param value</span>
+                    <span class="hljs-keyword">if</span> <span class="hljs-built_in">cap</span>(p) &lt; <span class="hljs-keyword">int</span>(n.maxParams) {
+                        p = <span class="hljs-built_in">make</span>(Params, <span class="hljs-number">0</span>, n.maxParams)
+                    }
+                    i := <span class="hljs-built_in">len</span>(p)
+                    p = p[:i+<span class="hljs-number">1</span>] <span class="hljs-comment">// expand slice within preallocated capacity</span>
+                    p[i].Key = n.path[<span class="hljs-number">2</span>:]
+                    <span class="hljs-keyword">if</span> unescape {
+                        <span class="hljs-keyword">var</span> err error
+                        <span class="hljs-keyword">if</span> p[i].Value, err = url.QueryUnescape(path); err != <span class="hljs-literal">nil</span> {
+                            p[i].Value = path <span class="hljs-comment">// fallback, in case of error</span>
+                        }
+                    } <span class="hljs-keyword">else</span> {
+                        p[i].Value = path
+                    }
+                    handlers = n.handlers
+                    <span class="hljs-keyword">return</span>
+                <span class="hljs-keyword">default</span>:
+                    <span class="hljs-built_in">panic</span>(<span class="hljs-string">"invalid node type"</span>)
+                }
+            }
+        } <span class="hljs-keyword">else</span> <span class="hljs-keyword">if</span> path == n.path {
+            <span class="hljs-comment">// We should have reached the node containing the handle.</span>
+            <span class="hljs-comment">// Check if this node has a handle registered.</span>
+            <span class="hljs-keyword">if</span> handlers = n.handlers; handlers != <span class="hljs-literal">nil</span> {
+                <span class="hljs-keyword">return</span>
+            }
+            <span class="hljs-keyword">if</span> path == <span class="hljs-string">"/"</span> &amp;&amp; n.wildChild &amp;&amp; n.nType != root {
+                tsr = <span class="hljs-literal">true</span>
+                <span class="hljs-keyword">return</span>
+            }
+            <span class="hljs-comment">// No handle found. Check if a handle for this path + a</span>
+            <span class="hljs-comment">// trailing slash exists for trailing slash recommendation</span>
+            <span class="hljs-keyword">for</span> i := <span class="hljs-number">0</span>; i &lt; <span class="hljs-built_in">len</span>(n.indices); i++ {
+                <span class="hljs-keyword">if</span> n.indices[i] == <span class="hljs-string">'/'</span> {
+                    n = n.children[i]
+                    tsr = (<span class="hljs-built_in">len</span>(n.path) == <span class="hljs-number">1</span> &amp;&amp; n.handlers != <span class="hljs-literal">nil</span>) ||
+                        (n.nType == catchAll &amp;&amp; n.children[<span class="hljs-number">0</span>].handlers != <span class="hljs-literal">nil</span>)
+                    <span class="hljs-keyword">return</span>
+                }
+            }
+            <span class="hljs-keyword">return</span>
+        }
+        <span class="hljs-comment">// Nothing found. We can recommend to redirect to the same URL with an</span>
+        <span class="hljs-comment">// extra trailing slash if a leaf exists for that path</span>
+        tsr = (path == <span class="hljs-string">"/"</span>) ||
+            (<span class="hljs-built_in">len</span>(n.path) == <span class="hljs-built_in">len</span>(path)+<span class="hljs-number">1</span> &amp;&amp; n.path[<span class="hljs-built_in">len</span>(path)] == <span class="hljs-string">'/'</span> &amp;&amp;
+                path == n.path[:<span class="hljs-built_in">len</span>(n.path)<span class="hljs-number">-1</span>] &amp;&amp; n.handlers != <span class="hljs-literal">nil</span>)
+        <span class="hljs-keyword">return</span>
+    }
+}</code></pre></article><script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.slim.min.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.5.0/Chart.bundle.min.js"></script><script>$(function() { $('canvas.chartjs').each(function() { new Chart($(this), JSON.parse($(this).text())); }); });</script></body></html>
